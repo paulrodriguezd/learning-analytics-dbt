@@ -1,0 +1,15 @@
+# Connection to the local Postgres started by docker-compose.yml.
+# The defaults are throwaway credentials for that local container only;
+# override them with environment variables for any other database.
+learning_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('PGHOST', 'localhost') }}"
+      port: "{{ env_var('PGPORT', '55432') | int }}"
+      user: "{{ env_var('PGUSER', 'analytics') }}"
+      password: "{{ env_var('PGPASSWORD', 'analytics') }}"
+      dbname: "{{ env_var('PGDATABASE', 'learning') }}"
+      schema: public
+      threads: 4

@@ -1,0 +1,112 @@
+version: 2
+
+models:
+  - name: gold_completion_by_tutor_month
+    description: >
+      Completion rate per tutor and month of assignment.
+      Population: lessons of active (not deleted) students with a tutor.
+      Window: a lesson counts as completed if finished within completion_window_days.
+      Denominator: lessons whose window had closed by as_of_date.
+      Rate = completed / assigned over the whole tutor-month (ratio of totals).
+      tutor_id is the student's current tutor (tutor history is not modelled).
+    columns:
+      - name: month
+        data_tests: [not_null]
+      - name: tutor_id
+        data_tests: [not_null]
+      - name: completion_rate
+        description: "Between 0 and 1."
+        data_tests: [not_null]
+
+  - name: gold_unassigned_alert
+    description: >
+      Data quality alert. Share of new active students without a tutor, by signup month.
+      is_alert is true above unassigned_alert_share.
+    columns:
+      - name: signup_month
+        data_tests: [unique, not_null]
+
+unit_tests:
+  - name: completion_window_boundaries
+    description: >
+      Window of 7 days, as_of_date 2026-01-01. Checks both edges of the window
+      and that a completion before the assignment does not count.
+    model: int_lesson_assignments_enriched
+    overrides:
+      vars:
+        completion_window_days: 7
+        as_of_date: "2026-01-01"
+    given:
+      - input: ref('stg_lesson_assignments')
+        rows:
+          - {assignment_id: in_window,      student_id: s1, assigned_at: "2025-12-01 10:00:00", completed_at: "2025-12-08 09:59:59"}
+          - {assignment_id: at_window_end,  student_id: s1, assigned_at: "2025-12-01 10:00:00", completed_at: "2025-12-08 10:00:00"}
+          - {assignment_id: before_assign,  student_id: s1, assigned_at: "2025-12-01 10:00:00", completed_at: "2025-11-30 10:00:00"}
+          - {assignment_id: never,          student_id: s1, assigned_at: "2025-12-01 10:00:00", completed_at: null}
+          - {assignment_id: closes_on_asof, student_id: s1, assigned_at: "2025-12-25 00:00:00", completed_at: null}
+          - {assignment_id: still_open,     student_id: s1, assigned_at: "2025-12-25 00:00:01", completed_at: null}
+          - {assignment_id: no_student,     student_id: ghost, assigned_at: "2025-12-01 10:00:00", completed_at: null}
+      - input: ref('stg_students')
+        rows:
+          - {student_id: s1, tutor_id: T01, is_deleted: false}
+    expect:
+      rows:
+        - {assignment_id: in_window,      student_found: true,  completed_in_window: true,  window_closed: true}
+        - {assignment_id: at_window_end,  student_found: true,  completed_in_window: false, window_closed: true}
+        - {assignment_id: before_assign,  student_found: true,  completed_in_window: false, window_closed: true}
+        - {assignment_id: never,          student_found: true,  completed_in_window: false, window_closed: true}
+        - {assignment_id: closes_on_asof, student_found: true,  completed_in_window: false, window_closed: true}
+        - {assignment_id: still_open,     student_found: true,  completed_in_window: false, window_closed: false}
+        - {assignment_id: no_student,     student_found: false, completed_in_window: false, window_closed: true}
+
+  - name: completion_rate_is_ratio_of_totals
+    description: >
+      Student A has 2 lessons (1 completed), student B has 8 (8 completed).
+      The tutor's rate must be 9/10 = 0.9, not the mean of 0.5 and 1.0.
+    model: gold_completion_by_tutor_month
+    given:
+      - input: ref('int_lesson_assignments_enriched')
+        rows:
+          - {assignment_id: a1, student_id: A, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          - {assignment_id: a2, student_id: A, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: false, window_closed: true}
+          - {assignment_id: b1, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          - {assignment_id: b2, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          - {assignment_id: b3, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          - {assignment_id: b4, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          - {assignment_id: b5, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          - {assignment_id: b6, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          - {assignment_id: b7, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          - {assignment_id: b8, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: true, window_closed: true}
+          # Excluded rows: window still open, and a deleted student.
+          - {assignment_id: x1, student_id: B, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: false, completed_in_window: false, window_closed: false}
+          - {assignment_id: x2, student_id: C, assigned_month: "2025-03-01", tutor_id: T01, student_found: true, student_is_deleted: true, completed_in_window: false, window_closed: true}
+    expect:
+      rows:
+        - {month: "2025-03-01", tutor_id: T01, n_students: 2, n_lessons_assigned: 10, n_lessons_completed: 9, completion_rate: "0.9000"}
+
+  - name: deleted_students_do_not_raise_the_alert
+    description: >
+      In March there are 2 active students (1 without tutor) and 3 deleted
+      students without tutor. The share must be 1/2, ignoring the deleted ones.
+      With a threshold of 0.5, March (at the threshold) does not alert and
+      April (above it) does.
+    model: gold_unassigned_alert
+    overrides:
+      vars:
+        unassigned_alert_share: 0.5
+    given:
+      - input: ref('stg_students')
+        rows:
+          - {student_id: s1, tutor_id: T01, signed_up_at: "2025-03-02", is_deleted: false}
+          - {student_id: s2, tutor_id: null, signed_up_at: "2025-03-10", is_deleted: false}
+          - {student_id: s6, tutor_id: null, signed_up_at: "2025-04-01", is_deleted: false}
+          - {student_id: s7, tutor_id: null, signed_up_at: "2025-04-02", is_deleted: false}
+          - {student_id: s3, tutor_id: null, signed_up_at: "2025-03-11", is_deleted: true}
+          - {student_id: s4, tutor_id: null, signed_up_at: "2025-03-12", is_deleted: true}
+          - {student_id: s5, tutor_id: null, signed_up_at: "2025-03-13", is_deleted: true}
+    expect:
+      rows:
+        # March: share exactly at the threshold does not alert (strictly greater than).
+        - {signup_month: "2025-03-01", n_new_students: 2, n_without_tutor: 1, share_without_tutor: "0.5000", is_alert: false}
+        # April: above the threshold, alerts.
+        - {signup_month: "2025-04-01", n_new_students: 2, n_without_tutor: 2, share_without_tutor: "1.0000", is_alert: true}
