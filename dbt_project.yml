@@ -1,0 +1,43 @@
+name: learning_analytics
+version: "1.0.0"
+profile: learning_analytics
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # A lesson counts as completed if it was finished within this many days.
+  completion_window_days: 7
+  # Date the data was extracted. Lessons whose completion window has not
+  # closed by this date are left out of the completion rate.
+  as_of_date: "2026-01-01"
+  # Alert when more than this share of new active students has no tutor.
+  unassigned_alert_share: 0.05
+
+# Bronze: raw CSVs loaded as-is, no cleaning.
+seeds:
+  learning_analytics:
+    +schema: bronze
+    raw_tutors:
+      +column_types: {tutor_id: text, tutor_name: text, hired_at: date}
+    raw_courses:
+      +column_types: {course_id: text, course_name: text, category: text}
+    raw_students:
+      +column_types: {student_id: text, tutor_id: text, country: text, signed_up_at: date, deleted_at: date}
+    raw_lesson_assignments:
+      +column_types: {assignment_id: text, student_id: text, course_id: text, assigned_at: timestamp, completed_at: timestamp}
+
+models:
+  learning_analytics:
+    # Silver: cleaned, typed and joined data. Views, cheap to rebuild.
+    silver:
+      +schema: silver
+      +materialized: view
+    # Gold: business metrics and alerts. Tables, ready to be queried.
+    gold:
+      +schema: gold
+      +materialized: table

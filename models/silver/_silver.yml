@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: stg_tutors
+    description: "Tutors, one row per tutor."
+    columns:
+      - name: tutor_id
+        data_tests: [unique, not_null]
+
+  - name: stg_courses
+    description: "Course catalogue, one row per course."
+    columns:
+      - name: course_id
+        data_tests: [unique, not_null]
+
+  - name: stg_students
+    description: "Students, one row per student. Deleted students are kept and flagged with is_deleted."
+    columns:
+      - name: student_id
+        data_tests: [unique, not_null]
+      - name: tutor_id
+        description: "Null when the student has no tutor assigned (a data quality problem)."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_tutors')
+                field: tutor_id
+      - name: is_deleted
+        data_tests: [not_null]
+
+  - name: stg_lesson_assignments
+    description: "Lesson assignments, one row per lesson assigned to a student."
+    columns:
+      - name: assignment_id
+        data_tests: [unique, not_null]
+      - name: student_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_students')
+                field: student_id
+      - name: course_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_courses')
+                field: course_id
+
+  - name: int_lesson_assignments_enriched
+    description: "Lesson assignments joined to their student, with the completion flags used in gold."
+    columns:
+      - name: assignment_id
+        data_tests: [unique, not_null]
+      - name: completed_in_window
+        description: "True if the lesson was completed within completion_window_days of being assigned."
+      - name: window_closed
+        description: "True if the completion window had fully passed by as_of_date, so the outcome is known."
