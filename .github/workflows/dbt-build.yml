@@ -1,0 +1,42 @@
+name: dbt build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  dbt-build:
+    runs-on: ubuntu-latest
+
+    env:
+      DBT_PROFILES_DIR: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dbt
+        run: pip install -r requirements.txt
+
+      - name: Check the generator reproduces the committed seeds
+        run: |
+          python scripts/generate_data.py
+          git diff --exit-code seeds/
+
+      # Same path as the README quick start: a new random password on
+      # every run, hidden from the logs, and Postgres from docker compose.
+      - name: Create random password and start Postgres
+        run: |
+          ./scripts/init_env.sh
+          . ./.env
+          echo "::add-mask::$PGPASSWORD"
+          echo "PGPASSWORD=$PGPASSWORD" >> "$GITHUB_ENV"
+          docker compose up -d --wait
+
+      - name: dbt build
+        run: dbt build
